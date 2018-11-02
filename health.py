@@ -5,7 +5,8 @@ import os
 import re
 
 from statsgen import StatsGen
-
+from pprint import pprint
+import csv
 
 def generate_accounts_dict(john):
     """Generate a dictionary object containing user account information and weak passwords"""
@@ -20,36 +21,69 @@ def generate_accounts_dict(john):
     return users
 
 
-def evaluate_password_health(users):
+def evaluate_password_health(users, print_password=False):
     """Evaluate the health of the passed in dictionary of accounts"""
     hasUpperCase = "[A-Z]"
     hasLowerCase = "[a-z]"
     hasNumbers = "\d"
     hasNonalphas = "\W"
+    results = []
     for username, password in users.items():
         # print("testing: %s:%s" % (username, password))
+        if print_password:
+            printable_pass = password
+        else:
+            printable_pass = ""
+
+        rules_dict = {"username":username,"password":printable_pass,"Length":1,"Capital":1,"Lower":1,"Digits":1,"Symbols":1}
+
         if len(password) < 8:
-            print("Policy breach, too short : %s:%s" % (username, password))
-        score = 0;
-        if re.search(hasUpperCase, password):
-            score += 1
+            print("Policy breach, too short : %s %s" % (username, printable_pass))
+            rules_dict["Length"] = "0"
+
+        elif len(password) > 8:
+            # print("larger than 8")
+            # raw_input('asdfasdf')
+            breakRules = []
+            score = 0;
+            bestCase = 4
+            # pprint(re.search(hasUpperCase, password))
+
+            if not re.search(hasUpperCase, password):
+                   breakRules.append("no upper case")
+                   rules_dict["Capital"] = 0
             # print("upper")
-        if re.search(hasLowerCase, password):
-            score += 1
+            if not re.search(hasLowerCase, password):
+                breakRules.append("no lower case")
+                rules_dict["Lower"] = 0
             # print("lower")
 
-        if re.search(hasNumbers, password):
-            score += 1
+            if not re.search(hasNumbers, password):
+                breakRules.append("no numbers")
+                rules_dict["Digits"] = 0
+
             # print("numbers")
 
-        if re.search(hasNonalphas, password):
-            score += 1
+            if not re.search(hasNonalphas, password):
+                breakRules.append("non symbols")
+                rules_dict["Symbols"] = 0
+
             # print("nonalphas")
 
-        if score < 3:
-            print("Policy breach: %s:%s %s" % (username, password, score))
+            score = bestCase - len(breakRules)
 
+            # print("%s score %s "%(password,score))  
+            # raw_input('asdfasdf')
+            if score <3:
+                print("================\nPolicy breach: %s:%s %s " % (username, printable_pass, score ))
 
+                for el in breakRules:
+                    print("Broken Rule: %s"%el)
+
+                print("================")
+                results.append(rules_dict)
+    return results
+   
 def generate_metrics(users):
     """Generate metrics from passed in dictionary of users"""
 
@@ -201,25 +235,38 @@ if __name__ == '__main__':
     parser.add_argument('-N', '--number', default=8, type=int,
                         help="Find all instances where the cracked password is less than the passed in number. Default "
                              "is \033[0;0;92m8\033[0m")
-    parser.add_argument('-M', '--metrics', action='store_true', default=True,
-                        help='Disable the calculation of metrics of AD password health data.')
+    parser.add_argument('-M', '--metrics', action='store_true', default=False,
+                        help='Print metrics of AD password health data.')
     parser.add_argument('--machine', default=False, action='store_true',
                         help="Include machine accounts in results")
+    parser.add_argument('-P', '--print_passwords', default=False, action='store_true',
+                        help="Print passwords as part of output")
     # parser.add_argument('-O', '--output', help="Output directory", required=True)
     parser.add_argument('--verbose', action='store_true', default=False, help="Enable verbose Output")
     parser.add_argument('--debug', action='store_true', default=False, help="Enable debug output")
+    parser.add_argument('--csv', default="pass_health.csv.learn_to_give_names_to_files", type=str, help="output to csv")
+
     args = parser.parse_args()
 
     DEBUG = args.debug
     VERBOSE = args.verbose
     accounts = generate_accounts_dict(args.john)
-    breach_accounts = evaluate_password_health(accounts)
+    breach_list = evaluate_password_health(accounts,print_password=args.print_passwords)
     stats = StatsGen()
     # for acc, password in accounts.items():
     #     stats.analyze_password(password=password)
+    if args.metrics:
+        stats.generate_stats(accounts)
+        stats.print_stats()
 
-    stats.generate_stats(accounts)
-    stats.print_stats()
+
+    if args.csv is not None:
+        fieldnames = ['username','password','Length','Capital','Lower','Digits','Symbols']
+        with open(args.csv,'w') as csvfile:
+            writer = csv.DictWriter(csvfile,fieldnames=fieldnames)
+            writer.writeheader()
+            for row in breach_list:
+                writer.writerow(row)
 
     # pprint(accounts)
     # if args.aduserinfo:
